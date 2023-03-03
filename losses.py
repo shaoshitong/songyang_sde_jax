@@ -52,6 +52,7 @@ def optimization_manager(config):
 
     def optimize_fn(state,
                     grad,
+                    new_model_state,
                     warmup=config.optim.warmup,
                     grad_clip=config.optim.grad_clip):
         """Optimizes with warmup and gradient clipping (disabled if negative)."""
@@ -67,7 +68,8 @@ def optimization_manager(config):
                 lambda x: x * grad_clip / jnp.maximum(grad_norm, grad_clip), grad)
         else:  # disabling gradient clipping if grad_clip < 0
             clipped_grad = grad
-        return state.optimizer.apply_gradient(clipped_grad)
+        print(new_model_state.keys())
+        return state.optimizer.apply_gradients(grads=clipped_grad)
 
     return optimize_fn
 
@@ -234,14 +236,14 @@ def get_step_fn(sde, model, train, optimize_fn=None, reduce_mean=False, continuo
         rng, step_rng = jax.random.split(rng)
         grad_fn = jax.value_and_grad(loss_fn, argnums=1, has_aux=True)
         if train:
-            params = state.optimizer.target
+            params = state.optimizer.params
             states = state.model_state
             (loss, new_model_state), grad = grad_fn(step_rng, params, states, batch)
             grad = jax.lax.pmean(grad, axis_name='batch')
-            new_optimizer = optimize_fn(state, grad)
-            new_params_ema = jax.tree_multimap(
+            new_optimizer = optimize_fn(state, grad,new_model_state)
+            new_params_ema = jax.tree_map(
                 lambda p_ema, p: p_ema * state.ema_rate + p * (1. - state.ema_rate),
-                state.params_ema, new_optimizer.target
+                state.params_ema, new_optimizer.params
             )
             step = state.step + 1
             new_state = state.replace(
