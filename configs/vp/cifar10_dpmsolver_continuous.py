@@ -29,15 +29,16 @@ def get_config():
 
   # sampling
   sampling = config.sampling
-  sampling.method = 'pc'
+  sampling.method = 'dpm_solver'
   sampling.predictor = 'euler_maruyama'
   sampling.corrector = 'none'
+  sampling.order = 2
+  sampling.steps = 30
 
   # data
   data = config.data
   data.centered = True
 
-  # eval
   eval = config.eval
   eval.begin_ckpt = 26
   eval.end_ckpt = 26
@@ -47,6 +48,7 @@ def get_config():
   eval.enable_loss = False
   eval.enable_bpd = False
   eval.bpd_dataset = 'test'
+
 
   # model
   model = config.model

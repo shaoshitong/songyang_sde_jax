@@ -68,7 +68,6 @@ def optimization_manager(config):
                 lambda x: x * grad_clip / jnp.maximum(grad_norm, grad_clip), grad)
         else:  # disabling gradient clipping if grad_clip < 0
             clipped_grad = grad
-        print(new_model_state.keys())
         return state.optimizer.apply_gradients(grads=clipped_grad)
 
     return optimize_fn

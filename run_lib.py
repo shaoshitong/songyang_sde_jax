@@ -157,7 +157,7 @@ def train(config, workdir):
            config.training.snapshot_freq_for_preemption % n_jitted_steps == 0 and \
            config.training.eval_freq % n_jitted_steps == 0 and \
            config.training.snapshot_freq % n_jitted_steps == 0, "Missing logs or checkpoints!"
-
+    print("initial_step: %d, num_train_steps: %d" % (initial_step, num_train_steps + 1))
     for step in range(initial_step, num_train_steps + 1, config.training.n_jitted_steps):
         # Convert data to JAX arrays and normalize them. Use ._numpy() to avoid copy.
         batch = jax.tree_map(lambda x: scaler(x._numpy()), next(train_iter))  # pylint: disable=protected-access
@@ -358,7 +358,7 @@ def evaluate(config,
     inceptionv3 = config.data.image_size >= 256
     inception_model = evaluation.get_inception_model(inceptionv3=inceptionv3)
 
-    logging.info("begin checkpoint: %d, end checkpoint: %d" % (begin_ckpt,config.eval.end_ckpt))
+    logging.info("begin checkpoint: %d, end checkpoint: %d" % (begin_ckpt, config.eval.end_ckpt))
     for ckpt in range(begin_ckpt, config.eval.end_ckpt + 1):
         # Wait if the target checkpoint doesn't exist yet
         waiting_message_printed = False
@@ -419,7 +419,7 @@ def evaluate(config,
                     bpds.extend(bpd)
                     logging.info(
                         "ckpt: %d, repeat: %d, batch: %d, mean bpd: %6f" % (
-                        ckpt, repeat, batch_id, jnp.mean(jnp.asarray(bpds))))
+                            ckpt, repeat, batch_id, jnp.mean(jnp.asarray(bpds))))
                     bpd_round_id = batch_id + len(ds_bpd) * repeat
                     # Save bits/dim to disk or Google Cloud Storage
                     with tf.io.gfile.GFile(os.path.join(eval_dir,
@@ -431,6 +431,7 @@ def evaluate(config,
 
                     eval_meta = eval_meta.replace(ckpt_id=ckpt, bpd_round_id=bpd_round_id, rng=rng)
                     # Save intermediate states to resume evaluation after pre-emption
+                    # TODO: REMOVE
                     checkpoints.save_checkpoint(
                         eval_dir,
                         eval_meta,
@@ -440,11 +441,13 @@ def evaluate(config,
         else:
             # Skip likelihood computation and save intermediate states for pre-emption
             eval_meta = eval_meta.replace(ckpt_id=ckpt, bpd_round_id=num_bpd_rounds - 1)
+            # TODO: REMOVE
             checkpoints.save_checkpoint(
                 eval_dir,
                 eval_meta,
                 step=ckpt * (num_sampling_rounds + num_bpd_rounds) + num_bpd_rounds - 1,
                 keep=1,
+                overwrite=True,
                 prefix=f"meta_{jax.host_id()}_")
 
         # Generate samples and compute IS/FID/KID when enabled
@@ -463,7 +466,10 @@ def evaluate(config,
 
                 rng, *sample_rng = jax.random.split(rng, jax.local_device_count() + 1)
                 sample_rng = jnp.asarray(sample_rng)
-                samples, n = sampling_fn(sample_rng, pstate)
+                if config.sampling.method == "dpm_solver":
+                    samples, n = sampling_fn(sample_rng, pstate, steps=config.sampling.steps, order=config.sampling.order)
+                else:
+                    samples, n = sampling_fn(sample_rng, pstate)
                 samples = np.clip(samples * 255., 0, 255).astype(np.uint8)
                 samples = samples.reshape(
                     (-1, config.data.image_size, config.data.image_size, config.data.num_channels))
@@ -498,6 +504,7 @@ def evaluate(config,
                         eval_meta,
                         step=ckpt * (num_sampling_rounds + num_bpd_rounds) + r + num_bpd_rounds,
                         keep=1,
+                        overwrite=True,
                         prefix=f"meta_{jax.host_id()}_")
 
             # Compute inception scores, FIDs and KIDs.

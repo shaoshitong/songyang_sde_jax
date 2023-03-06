@@ -22,7 +22,7 @@ import tensorflow as tf
 import tensorflow_gan as tfgan
 import tensorflow_hub as tfhub
 
-INCEPTION_TFHUB = '/tmp/tfhub_modules'
+INCEPTION_TFHUB = '/home/Bigdata/mtt_distillation_ckpt/song_sde/inception'
 INCEPTION_OUTPUT = 'logits'
 INCEPTION_FINAL_POOL = 'pool_3'
 _DEFAULT_DTYPES = {
@@ -36,7 +36,7 @@ tag = "my_tag"
 def get_inception_model(inceptionv3=False):
   if inceptionv3:
     return tfhub.load(
-      '/tmp/tfhub_modules/tfgan_eval_inception_1.tar.gz')
+      '/home/Bigdata/mtt_distillation_ckpt/song_sde/inception')
   else:
     return tfhub.load(INCEPTION_TFHUB)
 

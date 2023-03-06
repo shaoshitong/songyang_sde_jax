@@ -85,7 +85,7 @@ class NCSNpp(nn.Module):
       raise ValueError(f'embedding type {embedding_type} unknown.')
 
     if conditional:
-      print(default_initializer())
+      print(jnp.asarray(temb).shape)
       temb = nn.Dense(nf * 4, kernel_init=default_initializer())(temb)
       temb = nn.Dense(nf * 4, kernel_init=default_initializer())(act(temb))
     else:

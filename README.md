@@ -42,7 +42,7 @@ In general, the PyTorch version consumes less memory but also runs slower than J
 
 Run the following to install a subset of necessary python packages for our code
 ```sh
-pip install -r requirements.txt
+bash install.sh
 ```
 
 ### Stats files for quantitative evaluation
@@ -84,6 +84,11 @@ main.py:
 
   These functionalities can be configured through config files, or more conveniently, through the command-line support of the `ml_collections` package. For example, to generate samples and evaluate sample quality, supply the  `--config.eval.enable_sampling` flag; to compute log-likelihoods, supply the `--config.eval.enable_bpd` flag, and specify `--config.eval.dataset=train/test` to indicate whether to compute the likelihoods on the training or test dataset.
 
+RUN:
+
+```bash
+XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/local/cuda-11.6/ python main.py --config ./configs/vp/cifar10_ddpmpp_continuous.py --eval_folder ./checkpoints --mode train --workdir /home/Bigdata/mtt_distillation_ckpt/song_sde/cifar10_ddpmdp_contiguous/
+```
 ## How to extend the code
 * **New SDEs**: inherent the `sde_lib.SDE` abstract class and implement all abstract methods. The `discretize()` method is optional and the default is Euler-Maruyama discretization. Existing sampling methods and likelihood computation will automatically work for this new SDE.
 * **New predictors**: inherent the `sampling.Predictor` abstract class, implement the `update_fn` abstract method, and register its name with `@register_predictor`. The new predictor can be directly used in `sampling.get_pc_sampler` for Predictor-Corrector sampling, and all other controllable generation methods in `controllable_generation.py`.
