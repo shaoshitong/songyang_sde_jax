@@ -35,6 +35,7 @@ def get_config():
   sampling.order = 2
   sampling.steps = 30
 
+  # inception_score: 9.572424e+00, FID: 5.434513e+00, KID: 1.251559e-03
   # data
   data = config.data
   data.centered = True
@@ -42,9 +43,9 @@ def get_config():
   eval = config.eval
   eval.begin_ckpt = 26
   eval.end_ckpt = 26
-  eval.batch_size = 128
+  eval.batch_size = 512
   eval.enable_sampling = True
-  eval.num_samples = 500
+  eval.num_samples = 10000
   eval.enable_loss = False
   eval.enable_bpd = False
   eval.bpd_dataset = 'test'

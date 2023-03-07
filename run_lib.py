@@ -373,9 +373,12 @@ def evaluate(config,
         # Wait for 2 additional mins in case the file exists but is not ready for reading
         import copy
         from models.utils import State
+
         new_state = checkpoints.restore_checkpoint(checkpoint_dir, target=None, step=ckpt)
         new_state.pop("optimizer")
-        state.mutate(**new_state)
+        # flax.serialization.from_state_dict
+        new_state["params_ema"] = jax.tree_map(lambda x,y:x.reshape(y.shape),new_state["params_ema"],state.params_ema.unfreeze())
+        state = state.replace(**new_state)
         # Replicate the training state for executing on multiple devices
         pstate = flax.jax_utils.replicate(state)
         # Compute the loss function on the full evaluation dataset if loss computation is enabled

@@ -101,7 +101,7 @@ class NoiseScheduleVP:
         self.schedule = schedule
         if schedule == 'discrete':
             if betas is not None:
-                log_alphas = 0.5 * jnp.log(1 - betas).cumsum(axis=0)
+                log_alphas = 0.5 * jnp.log(1 - betas).cumsum(axis=0) # TODO: ERROR
             else:
                 assert alphas_cumprod is not None
                 log_alphas = 0.5 * jnp.log(alphas_cumprod)
@@ -434,7 +434,7 @@ class DPM_Solver:
             return jnp.linspace(t_T, t_0, N + 1)
         elif skip_type == 'time_quadratic':
             t_order = 2
-            t = jnp.power(jnp.linspace(t_T ** (1. / t_order), t_0 ** (1. / t_order), N + 1), t_order)  # TODO: ERROR
+            t = jnp.power(jnp.linspace(t_T ** (1. / t_order), t_0 ** (1. / t_order), N + 1), t_order)
             return t
         else:
             raise ValueError(
@@ -1093,12 +1093,12 @@ class DPM_Solver:
             assert steps >= order
             timesteps = self.get_time_steps(skip_type=skip_type, t_T=t_T, t_0=t_0, N=steps)
             assert timesteps.shape[0] - 1 == steps
-            vec_t = jnp.tile(timesteps[0], (x.shape[0]))  # TODO: ERROR
+            vec_t = jnp.tile(timesteps[0], (x.shape[0]))
             model_prev_list = [self.model_fn(x, vec_t)]
             t_prev_list = [vec_t]
             # Init the first `order` values by lower order multistep DPM-Solver.
             for init_order in range(1, order):
-                vec_t = jnp.tile(timesteps[init_order], (x.shape[0]))  # TODO: ERROR
+                vec_t = jnp.tile(timesteps[init_order], (x.shape[0]))
                 x = self.multistep_dpm_solver_update(x, model_prev_list, t_prev_list, vec_t, init_order,
                                                      solver_type=solver_type)
                 model_prev_list.append(self.model_fn(x, vec_t))
@@ -1108,7 +1108,7 @@ class DPM_Solver:
 
             def multistep_loop_fn(step, val):
                 x, ts_prev, models_prev = val
-                vec_t = jnp.tile(timesteps[step], (x.shape[0]))  # TODO: ERROR
+                vec_t = jnp.tile(timesteps[step], (x.shape[0]))
                 x = self.multistep_dpm_solver_update(x, models_prev, ts_prev, vec_t, order, solver_type=solver_type)
                 ts_prev = jnp.roll(ts_prev, -1, axis=0)
                 models_prev = jnp.roll(models_prev, -1, axis=0)

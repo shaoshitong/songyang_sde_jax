@@ -41,13 +41,14 @@ def get_config():
   eval = config.eval
   eval.begin_ckpt = 26
   eval.end_ckpt = 26
-  eval.batch_size = 128
+  eval.batch_size = 512
   eval.enable_sampling = True
-  eval.num_samples = 500
-  eval.enable_loss = False
+  eval.num_samples = 10000
+  eval.enable_loss = True
   eval.enable_bpd = False
   eval.bpd_dataset = 'test'
 
+  #  inception_score: 9.617269e+00, FID: 5.967415e+00, KID: 1.595003e-03
   # model
   model = config.model
   model.name = 'ncsnpp'

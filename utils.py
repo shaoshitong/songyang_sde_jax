@@ -25,9 +25,12 @@
 import math
 from typing import Any, Dict, Optional, TypeVar
 
+import os,io
+from PIL import Image
 import flax
 import jax
 import jax.numpy as jnp
+import numpy as np
 from PIL import Image
 import tensorflow as tf
 
@@ -47,7 +50,22 @@ def load_training_state(filepath, state):
     state = flax.serialization.from_bytes(state, f.read())
   return state
 
+def turn_npz_to_image(path):
+  with tf.io.gfile.GFile(path, "rb") as fin:
+    io_buffer = io.BytesIO(fin.read())
+    data = np.load(io_buffer)
+    samples = data["samples"]
+    for i in range(samples.shape[0]):
+      sub_sample = samples[i]
+      print(sub_sample.max(),sub_sample.min())
+      Image.fromarray(sub_sample).save(f"image_{i}.png")
 
+def load_loss(path):
+  with tf.io.gfile.GFile(path, "rb") as fin:
+    io_buffer = io.BytesIO(fin.read())
+    data = np.load(io_buffer)
+    loss = data["mean_loss"]
+    print(loss)
 def save_image(ndarray, fp, nrow=8, padding=2, pad_value=0.0, format=None):
   """Make a grid of images and save it into an image file.
 
@@ -112,3 +130,6 @@ def flatten_dict(config):
     else:
       new_dict[key] = value
   return new_dict
+
+if __name__ =="__main__":
+  load_loss("/home/Bigdata/mtt_distillation_ckpt/song_sde/cifar10_ddpmdp_contiguous/eval/ckpt_26_loss.npz")
