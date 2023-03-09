@@ -70,12 +70,19 @@ def train(config, workdir):
     # Initialize model.
     rng, step_rng = jax.random.split(rng)
     score_model, init_model_state, initial_params = mutils.init_model(step_rng, config)
+
+    if config.training.mode == "vanilla_kd":
+        rng, step_rng2 = jax.random.split(rng)
+        student_model, student_init_model_state, student_initial_params = mutils.init_model(step_rng, config)
+
+    elif config.training.mode == "error_kd":
+        rng, step_rng2 = jax.random.split(rng)
+
     optimizer = train_state.TrainState.create(
         tx=losses.get_optimizer(config),
         params=initial_params,
         apply_fn=score_model.apply
     )
-
     state = mutils.State(step=0, optimizer=optimizer, lr=config.optim.lr,
                          model_state=init_model_state,
                          ema_rate=config.model.ema_rate,

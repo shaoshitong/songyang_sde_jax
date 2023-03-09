@@ -18,6 +18,7 @@ def get_default_configs():
   training.continuous = True
   training.n_jitted_steps = 5
   training.reduce_mean = False
+  training.mode = "origin"
 
   # sampling
   config.sampling = sampling = ml_collections.ConfigDict()
