@@ -190,17 +190,34 @@ def get_kd_sde_loss_fn(sde, model, teacher_model, error_kd, train, reduce_mean=T
         rng, step_rng = random.split(rng)
         teacher_score, _ = teacher_score_fn(perturbed_data, t, rng=step_rng)
         if error_kd:
-            diff_step = 1 / kwargs["diff_step"] if hasattr(kwargs, "diff_step") else 1 / 25.
+            diff_step = 1 / kwargs["diff_step"] if hasattr(kwargs, "diff_step") else 1 / sde.N
+
+            def weight_fn(i, sum):
+                now_t = i / kwargs["diff_steps"] if hasattr(kwargs, "diff_step") else i / sde.N
+                log_alphas = -0.25 * (now_t - jnp.asarray(diff_step)) ** 2 * (
+                        sde.beta_1 - sde.beta_0) \
+                             - 0.5 * (now_t - jnp.asarray(diff_step)) * sde.beta_0
+                log_sigmas = 0.5 * jnp.log(1. - jnp.exp(2. * log_alphas))
+                lambdas = log_alphas - log_sigmas
+                next_log_alphas = -0.25 * (now_t) ** 2 * (sde.beta_1 - sde.beta_0) \
+                                  - 0.5 * (now_t) * sde.beta_0
+                next_log_sigmas = 0.5 * jnp.log(1. - jnp.exp(2. * next_log_alphas))
+                next_lambdas = next_log_alphas - next_log_sigmas
+                return sum + (lambdas - next_lambdas) * jnp.exp(-next_lambdas)
+
             log_alphas = -0.25 * (t - jnp.asarray([diff_step]).broadcast((t.shape))) ** 2 * (sde.beta_1 - sde.beta_0) \
                          - 0.5 * (t - jnp.asarray([diff_step]).broadcast((t.shape))) * sde.beta_0
             log_sigmas = 0.5 * jnp.log(1. - jnp.exp(2. * log_alphas))
             lambdas = log_alphas - log_sigmas
             next_log_alphas = -0.25 * (t).broadcast((t.shape)) ** 2 * (sde.beta_1 - sde.beta_0) \
-                              - 0.5 * (t) * sde.beta_0
+                              - 0.5 * (t).broadcast((t.shape)) * sde.beta_0
             next_log_sigmas = 0.5 * jnp.log(1. - jnp.exp(2. * next_log_alphas))
             next_lambdas = next_log_alphas - next_log_sigmas
             diff_lambdas = (lambdas - next_lambdas)
             final_weight = batch_mul(diff_lambdas, jnp.exp(-next_lambdas))
+            sum_weight = jax.lax.fori_loop(1, kwargs["diff_steps"] + 1, weight_fn, jnp.asarray(0.))
+            final_weight = final_weight * (kwargs["diff_steps"] if hasattr(kwargs, "diff_step") else sde.N) / sum_weight
+            print(sum_weight,final_weight)
         else:
             final_weight = jnp.ones_like(t)
 
@@ -290,11 +307,13 @@ def get_kd_smld_loss_fn(vesde, model, teacher_model, error_kd, train, reduce_mea
             kwargs["ce_weight"] if hasattr(kwargs, "ce_weight") else 1)
 
         if error_kd:
-            next_lambdas = smld_lambda_array[labels]
-            ex_smld_lambda_array = jnp.concatenate(jnp.asarray([0]), smld_lambda_array)
-            lambdas = ex_smld_lambda_array[labels]
-            diff_lambdas = (lambdas - next_lambdas)
-            final_weight = batch_mul(diff_lambdas, jnp.exp(-next_lambdas))
+            lambdas = smld_lambda_array
+            next_lambdas = jnp.concatenate((lambdas, jnp.asarray([1.])))
+            now_lambdas = jnp.concatenate((jnp.asarray([0.]), lambdas))
+            diff_lambdas = (now_lambdas - next_lambdas)
+            last_lambdas = diff_lambdas * jnp.exp(-next_lambdas)
+            final_weight = last_lambdas.shape[0] * last_lambdas[labels] / jnp.sum(last_lambdas)
+
         else:
             final_weight = jnp.ones_like(labels)
 
@@ -365,10 +384,11 @@ def get_kd_ddpm_loss_fn(vpsde, model, train, teacher_model, error_kd, reduce_mea
 
         if error_kd:
             lambdas = vpsde.discrete_lambda
-            now_lambdas = lambdas[labels]
-            next_lambdas = jnp.concatenate(jnp.asarray([0.]), lambdas)[lambdas]
+            next_lambdas = jnp.concatenate((lambdas, jnp.asarray([1.])))
+            now_lambdas = jnp.concatenate((jnp.asarray([0.]), lambdas))
             diff_lambdas = (now_lambdas - next_lambdas)
-            final_weight = batch_mul(diff_lambdas, jnp.exp(-next_lambdas))
+            last_lambdas = diff_lambdas * jnp.exp(-next_lambdas)
+            final_weight = last_lambdas.shape[0] * last_lambdas[labels] / jnp.sum(last_lambdas)
         else:
             final_weight = jnp.ones_like(labels)
 

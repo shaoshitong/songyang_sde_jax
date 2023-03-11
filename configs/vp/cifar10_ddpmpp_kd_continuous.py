@@ -30,7 +30,7 @@ def get_config():
   training.reduce_mean = True
   training.mode = "vanilla_kd"
   training.kd_weight = 1
-  training.ce_weight = 1
+  training.ce_weight = 0
   training.diff_step = 1000
 
   # sampling
@@ -62,9 +62,9 @@ def get_config():
   model.ema_rate = 0.9999
   model.normalization = 'GroupNorm'
   model.nonlinearity = 'swish'
-  model.nf = 128
+  model.nf = 64
   model.ch_mult = (1, 2, 2, 2)
-  model.num_res_blocks = 4
+  model.num_res_blocks = 2
   model.attn_resolutions = (16,)
   model.resamp_with_conv = True
   model.conditional = True
@@ -88,9 +88,9 @@ def get_config():
   teacher_model.ema_rate = 0.9999
   teacher_model.normalization = 'GroupNorm'
   teacher_model.nonlinearity = 'swish'
-  teacher_model.nf = 64
+  teacher_model.nf = 128
   teacher_model.ch_mult = (1, 2, 2, 2)
-  teacher_model.num_res_blocks = 2
+  teacher_model.num_res_blocks = 4
   teacher_model.attn_resolutions = (16,)
   teacher_model.resamp_with_conv = True
   teacher_model.conditional = True

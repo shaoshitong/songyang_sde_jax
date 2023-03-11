@@ -78,11 +78,24 @@ def train(config, workdir):
         kd_config.model = kd_config.teacher_model
         teacher_score_model, teacher_init_model_state, teacher_initial_params = mutils.init_model(step_rng, kd_config)
 
+        checkpoint_dir = os.path.join(workdir, "teacher_checkpoints")
+        assert os.path.exists(checkpoint_dir),"This dir should be exists, and the checkpoint should store in it"
+        new_state = checkpoints.restore_checkpoint(checkpoint_dir, target=None)
+        teacher_initial_params = jax.tree_map(lambda x, y: x.reshape(y.shape), new_state["params_ema"],
+                                               teacher_initial_params.unfreeze())
+
     elif config.training.mode == "error_kd":
         rng, step_rng2 = jax.random.split(rng)
         kd_config = copy.deepcopy(config)
         kd_config.model = kd_config.teacher_model
         teacher_score_model, teacher_init_model_state, teacher_initial_params = mutils.init_model(step_rng, kd_config)
+
+        checkpoint_dir = os.path.join(workdir, "teacher_checkpoints")
+        assert os.path.exists(checkpoint_dir),"This dir should be exists, and the checkpoint should store in it"
+        new_state = checkpoints.restore_checkpoint(checkpoint_dir, target=None)
+        teacher_initial_params = jax.tree_map(lambda x, y: x.reshape(y.shape), new_state["params_ema"],
+                                               teacher_initial_params.unfreeze())
+
 
 
     optimizer = train_state.TrainState.create(
@@ -187,7 +200,6 @@ def train(config, workdir):
         if config.training.mode == "origin":
             (_, pstate), ploss = p_train_step((next_rng, pstate), batch)
         else:
-            print("KD YES")
             (_, pteacher_initial_params, pstate), ploss = p_train_step((next_rng,pteacher_initial_params, pstate), batch)
 
         loss = flax.jax_utils.unreplicate(ploss).mean()
@@ -401,7 +413,6 @@ def evaluate(config,
 
         new_state = checkpoints.restore_checkpoint(checkpoint_dir, target=None, step=ckpt)
         new_state.pop("optimizer")
-        # flax.serialization.from_state_dict
         new_state["params_ema"] = jax.tree_map(lambda x,y:x.reshape(y.shape),new_state["params_ema"],state.params_ema.unfreeze())
         state = state.replace(**new_state)
         # Replicate the training state for executing on multiple devices
