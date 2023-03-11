@@ -193,7 +193,7 @@ def get_kd_sde_loss_fn(sde, model, teacher_model, error_kd, train, reduce_mean=T
             diff_step = 1 / kwargs["diff_step"] if hasattr(kwargs, "diff_step") else 1 / sde.N
 
             def weight_fn(i, sum):
-                now_t = i / kwargs["diff_steps"] if hasattr(kwargs, "diff_step") else i / sde.N
+                now_t = i / kwargs["diff_step"] if hasattr(kwargs, "diff_step") else i / sde.N
                 log_alphas = -0.25 * (now_t - jnp.asarray(diff_step)) ** 2 * (
                         sde.beta_1 - sde.beta_0) \
                              - 0.5 * (now_t - jnp.asarray(diff_step)) * sde.beta_0
@@ -215,9 +215,10 @@ def get_kd_sde_loss_fn(sde, model, teacher_model, error_kd, train, reduce_mean=T
             next_lambdas = next_log_alphas - next_log_sigmas
             diff_lambdas = (lambdas - next_lambdas)
             final_weight = batch_mul(diff_lambdas, jnp.exp(-next_lambdas))
-            sum_weight = jax.lax.fori_loop(1, kwargs["diff_steps"] + 1, weight_fn, jnp.asarray(0.))
-            final_weight = final_weight * (kwargs["diff_steps"] if hasattr(kwargs, "diff_step") else sde.N) / sum_weight
-            jax.debug.print("BEGIN: {x},{y}",x=sum_weight,y=final_weight)
+            sum_weight = jax.lax.fori_loop(1, kwargs["diff_step"] + 1 if hasattr(kwargs, "diff_step") else sde.N + 1,
+                                           weight_fn, jnp.asarray(0.))
+            final_weight = final_weight * (kwargs["diff_step"] if hasattr(kwargs, "diff_step") else sde.N) / sum_weight
+            jax.debug.print("BEGIN: {x},{y},{z}", x=sum_weight, y=final_weight)
         else:
             final_weight = jnp.ones_like(t)
 
@@ -235,12 +236,12 @@ def get_kd_sde_loss_fn(sde, model, teacher_model, error_kd, train, reduce_mean=T
             kd_losses = batch_mul(jnp.square(student_score - teacher_score), final_weight)
             kd_losses = reduce_op(kd_losses.reshape((kd_losses.shape[0], -1)), axis=-1)
 
-
         if hasattr(kwargs, "kd_weight"):
-            kd_losses = kd_losses * jnp.asarray(kwargs["kd_weight"])
+            kd_losses = kd_losses * jnp.asarray([kwargs["kd_weight"]]).broadcast((t.shape))
         if hasattr(kwargs, "ce_weight"):
-            origin_losses = origin_losses * jnp.asarray(kwargs["ce_weight"])
-        jax.debug.print("KD_LOSS: {x}, CE_LOSS: {y}", x=kd_losses,y=origin_losses)
+            origin_losses = origin_losses * jnp.asarray([kwargs["ce_weight"]]).broadcast((t.shape))
+        jax.debug.print("KD_LOSS: {x}, CE_LOSS: {y},KD_WEIGHT {z}, CE_WEIGHT {m}", x=kd_losses, y=origin_losses,
+                        z=jnp.asarray([kwargs["kd_weight"]]).broadcast((t.shape)),m=jnp.asarray([kwargs["ce_weight"]]).broadcast((t.shape)))
         losses = kd_losses + origin_losses
 
         loss = jnp.mean(losses)
