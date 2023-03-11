@@ -15,7 +15,7 @@
 
 # pylint: skip-file
 """Training and evaluation for score-based generative models. """
-
+import copy
 import gc
 import io
 import os
@@ -73,10 +73,17 @@ def train(config, workdir):
 
     if config.training.mode == "vanilla_kd":
         rng, step_rng2 = jax.random.split(rng)
-        student_model, student_init_model_state, student_initial_params = mutils.init_model(step_rng, config)
+        kd_config = copy.deepcopy(config)
+        kd_config.model = kd_config.teacher_model
+        kd_config.model = kd_config.teacher_model
+        teacher_score_model, teacher_init_model_state, teacher_initial_params = mutils.init_model(step_rng, kd_config)
 
     elif config.training.mode == "error_kd":
         rng, step_rng2 = jax.random.split(rng)
+        kd_config = copy.deepcopy(config)
+        kd_config.model = kd_config.teacher_model
+        teacher_score_model, teacher_init_model_state, teacher_initial_params = mutils.init_model(step_rng, kd_config)
+
 
     optimizer = train_state.TrainState.create(
         tx=losses.get_optimizer(config),
@@ -131,9 +138,14 @@ def train(config, workdir):
     continuous = config.training.continuous
     reduce_mean = config.training.reduce_mean
     likelihood_weighting = config.training.likelihood_weighting
-    train_step_fn = losses.get_step_fn(sde, score_model, train=True, optimize_fn=optimize_fn,
-                                       reduce_mean=reduce_mean, continuous=continuous,
-                                       likelihood_weighting=likelihood_weighting)
+    if config.training.mode == "origin":
+        train_step_fn = losses.get_step_fn(sde, score_model, train=True, optimize_fn=optimize_fn,
+                                           reduce_mean=reduce_mean, continuous=continuous,
+                                           likelihood_weighting=likelihood_weighting)
+    else:
+        train_step_fn = losses.get_kd_step_fn(sde, score_model, teacher_score_model, train=True, optimize_fn=optimize_fn,
+                                           reduce_mean=reduce_mean, continuous=continuous,
+                                           likelihood_weighting=likelihood_weighting,config=config)
     # Pmap (and jit-compile) multiple training steps together for faster running
     p_train_step = jax.pmap(functools.partial(jax.lax.scan, train_step_fn), axis_name='batch', donate_argnums=1)
     eval_step_fn = losses.get_step_fn(sde, score_model, train=False, optimize_fn=optimize_fn,
@@ -150,6 +162,7 @@ def train(config, workdir):
 
     # Replicate the training state to run on multiple devices
     pstate = flax_utils.replicate(state)
+    pteacher_initial_params = flax_utils.replicate(teacher_initial_params)
     num_train_steps = config.training.n_iters
 
     # In case there are multiple hosts (e.g., TPU pods), only log to host 0
@@ -171,7 +184,12 @@ def train(config, workdir):
         rng, *next_rng = jax.random.split(rng, num=jax.local_device_count() + 1)
         next_rng = jnp.asarray(next_rng)
         # Execute one training step
-        (_, pstate), ploss = p_train_step((next_rng, pstate), batch)
+        if config.training.mode == "origin":
+            (_, pstate), ploss = p_train_step((next_rng, pstate), batch)
+        else:
+            print("KD YES")
+            (_, pteacher_initial_params, pstate), ploss = p_train_step((next_rng,pteacher_initial_params, pstate), batch)
+
         loss = flax.jax_utils.unreplicate(ploss).mean()
         # Log to console, file and tensorboard on host 0
         if jax.host_id() == 0 and step % config.training.log_freq == 0:

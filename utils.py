@@ -66,6 +66,8 @@ def load_loss(path):
     data = np.load(io_buffer)
     loss = data["mean_loss"]
     print(loss)
+
+
 def save_image(ndarray, fp, nrow=8, padding=2, pad_value=0.0, format=None):
   """Make a grid of images and save it into an image file.
 

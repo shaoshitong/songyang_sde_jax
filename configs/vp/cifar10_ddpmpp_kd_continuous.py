@@ -15,6 +15,8 @@
 
 # Lint as: python3
 """Training NCSNv3 on CIFAR-10 with continuous sigmas."""
+import copy
+
 import ml_collections
 from configs.default_cifar10_configs import get_default_configs
 
@@ -27,6 +29,10 @@ def get_config():
   training.continuous = True
   training.reduce_mean = True
   training.mode = "vanilla_kd"
+  training.kd_weight = 1
+  training.ce_weight = 1
+  training.diff_step = 1000
+
   # sampling
   sampling = config.sampling
   sampling.method = 'pc'
@@ -75,30 +81,36 @@ def get_config():
   model.fourier_scale = 16
   model.conv_size = 3
 
-  config.student_model = student_model = ml_collections.ConfigDict()
+  config.teacher_model = teacher_model = copy.deepcopy(config.model)
   # student model
-  student_model.name = 'ncsnpp'
-  student_model.scale_by_sigma = False
-  student_model.ema_rate = 0.9999
-  student_model.normalization = 'GroupNorm'
-  student_model.nonlinearity = 'swish'
-  student_model.nf = 64
-  student_model.ch_mult = (1, 2, 2, 2)
-  student_model.num_res_blocks = 2
-  student_model.attn_resolutions = (16,)
-  student_model.resamp_with_conv = True
-  student_model.conditional = True
-  student_model.fir = False
-  student_model.fir_kernel = [1, 3, 3, 1]
-  student_model.skip_rescale = True
-  student_model.resblock_type = 'biggan'
-  student_model.progressive = 'none'
-  student_model.progressive_input = 'none'
-  student_model.progressive_combine = 'sum'
-  student_model.attention_type = 'ddpm'
-  student_model.init_scale = 0.
-  student_model.embedding_type = 'positional'
-  student_model.fourier_scale = 16
-  student_model.conv_size = 3
+  teacher_model.name = 'ncsnpp'
+  teacher_model.scale_by_sigma = False
+  teacher_model.ema_rate = 0.9999
+  teacher_model.normalization = 'GroupNorm'
+  teacher_model.nonlinearity = 'swish'
+  teacher_model.nf = 64
+  teacher_model.ch_mult = (1, 2, 2, 2)
+  teacher_model.num_res_blocks = 2
+  teacher_model.attn_resolutions = (16,)
+  teacher_model.resamp_with_conv = True
+  teacher_model.conditional = True
+  teacher_model.fir = False
+  teacher_model.fir_kernel = [1, 3, 3, 1]
+  teacher_model.skip_rescale = True
+  teacher_model.resblock_type = 'biggan'
+  teacher_model.progressive = 'none'
+  teacher_model.progressive_input = 'none'
+  teacher_model.progressive_combine = 'sum'
+  teacher_model.attention_type = 'ddpm'
+  teacher_model.init_scale = 0.
+  teacher_model.embedding_type = 'positional'
+  teacher_model.fourier_scale = 16
+  teacher_model.conv_size = 3
 
   return config
+
+"""
+XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/local/cuda-11.6/ python main.py \
+--config ./configs/vp/cifar10_ddpmpp_kd_continuous.py --eval_folder ./eval \
+--mode train --workdir /home/Bigdata/mtt_distillation_ckpt/song_sde/cifar10_ddpmpp_kd_contiguous/
+"""

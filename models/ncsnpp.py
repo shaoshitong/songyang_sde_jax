@@ -41,6 +41,7 @@ class NCSNpp(nn.Module):
   def __call__(self, x, time_cond, train=True):
     # config parsing
     config = self.config
+
     act = get_act(config)
     sigmas = utils.get_sigmas(config)
 

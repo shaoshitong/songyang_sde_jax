@@ -130,6 +130,8 @@ class VPSDE(SDE):
         self.alphas_cumprod = jnp.cumprod(self.alphas, axis=0)
         self.sqrt_alphas_cumprod = jnp.sqrt(self.alphas_cumprod)
         self.sqrt_1m_alphas_cumprod = jnp.sqrt(1. - self.alphas_cumprod)
+        self.discrete_lambda = jnp.log(self.sqrt_alphas_cumprod / self.sqrt_1m_alphas_cumprod + 1e-8)
+        self.t_array = jnp.linspace(0., 1., N + 1)[1:].reshape((1, -1))
 
     @property
     def T(self):

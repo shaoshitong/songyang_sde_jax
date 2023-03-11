@@ -50,7 +50,6 @@ class DDPM(nn.Module):
     act = get_act(config)
     normalize = get_normalization(config)
     sigmas = utils.get_sigmas(config)
-
     nf = config.model.nf
     ch_mult = config.model.ch_mult
     num_res_blocks = config.model.num_res_blocks
