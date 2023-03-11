@@ -217,7 +217,7 @@ def get_kd_sde_loss_fn(sde, model, teacher_model, error_kd, train, reduce_mean=T
             final_weight = batch_mul(diff_lambdas, jnp.exp(-next_lambdas))
             sum_weight = jax.lax.fori_loop(1, kwargs["diff_steps"] + 1, weight_fn, jnp.asarray(0.))
             final_weight = final_weight * (kwargs["diff_steps"] if hasattr(kwargs, "diff_step") else sde.N) / sum_weight
-            print(sum_weight,final_weight)
+            jax.debug.print("BEGIN: {x},{y}",x=sum_weight,y=final_weight)
         else:
             final_weight = jnp.ones_like(t)
 
@@ -228,7 +228,6 @@ def get_kd_sde_loss_fn(sde, model, teacher_model, error_kd, train, reduce_mean=T
             kd_losses = batch_mul(jnp.square(batch_mul(student_score, std) - batch_mul(teacher_score, std)),
                                   final_weight)
             kd_losses = reduce_op(kd_losses.reshape((kd_losses.shape[0], -1)), axis=-1)
-
         else:
             g2 = sde.sde(jnp.zeros_like(data), t)[1] ** 2
             origin_losses = jnp.square(student_score + batch_mul(z, 1. / std))
@@ -236,11 +235,12 @@ def get_kd_sde_loss_fn(sde, model, teacher_model, error_kd, train, reduce_mean=T
             kd_losses = batch_mul(jnp.square(student_score - teacher_score), final_weight)
             kd_losses = reduce_op(kd_losses.reshape((kd_losses.shape[0], -1)), axis=-1)
 
+
         if hasattr(kwargs, "kd_weight"):
             kd_losses = kd_losses * jnp.asarray(kwargs["kd_weight"])
         if hasattr(kwargs, "ce_weight"):
             origin_losses = origin_losses * jnp.asarray(kwargs["ce_weight"])
-
+        jax.debug.print("KD_LOSS: {x}, CE_LOSS: {y}", x=kd_losses,y=origin_losses)
         losses = kd_losses + origin_losses
 
         loss = jnp.mean(losses)
