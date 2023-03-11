@@ -28,7 +28,7 @@ def get_config():
   training.sde = 'vpsde'
   training.continuous = True
   training.reduce_mean = True
-  training.mode = "vanilla_kd"
+  training.mode = "error_kd"
   training.kd_weight = 1
   training.ce_weight = 0
   training.diff_step = 1000
