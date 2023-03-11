@@ -220,8 +220,6 @@ def get_kd_sde_loss_fn(sde, model, teacher_model, error_kd, train, reduce_mean=T
                                            weight_fn, jnp.asarray(0.))
             final_weight = final_weight * (
                 kwargs["diff_step"] - 1 if ("diff_step" in kwargs.keys()) else sde.N - 1) / sum_weight
-            jax.debug.print("BEGIN: {x},{y}", x=sum_weight, y=final_weight)
-            jax.debug.breakpoint()
         else:
             final_weight = jnp.ones_like(t)
 
