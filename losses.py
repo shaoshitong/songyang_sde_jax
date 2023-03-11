@@ -215,11 +215,11 @@ def get_kd_sde_loss_fn(sde, model, teacher_model, error_kd, train, reduce_mean=T
             next_lambdas = next_log_alphas - next_log_sigmas
             diff_lambdas = (lambdas - next_lambdas)
             final_weight = batch_mul(diff_lambdas, jnp.exp(-next_lambdas))
-            jax.debug.print("final_weight {x}", x=final_weight.shape)
             sum_weight = jax.lax.fori_loop(1, kwargs["diff_step"] if ("diff_step" in kwargs.keys()) else sde.N,
                                            weight_fn, jnp.asarray(0.))
             final_weight = final_weight * (
                 kwargs["diff_step"] - 1 if ("diff_step" in kwargs.keys()) else sde.N - 1) / sum_weight
+            final_weight = jnp.where(jnp.logical_or(jnp.isinf(final_weight),jnp.isnan(final_weight)),1,final_weight)
         else:
             final_weight = jnp.ones_like(t)
 
