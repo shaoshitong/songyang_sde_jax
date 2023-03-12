@@ -203,23 +203,24 @@ def get_kd_sde_loss_fn(sde, model, teacher_model, error_kd, train, reduce_mean=T
                                   - 0.5 * (now_t) * sde.beta_0
                 next_log_sigmas = 0.5 * jnp.log(1. - jnp.exp(2. * next_log_alphas) + 1e-5)
                 next_lambdas = next_log_alphas - next_log_sigmas
-                return sum + (lambdas - next_lambdas) * jnp.exp(-next_lambdas)
+                return sum + jnp.exp(-next_lambdas) - jnp.exp(-lambdas)
 
-            log_alphas = -0.25 * (t - jnp.asarray(diff_step).broadcast((t.shape))) ** 2 * (sde.beta_1 - sde.beta_0) \
-                         - 0.5 * (t - jnp.asarray(diff_step).broadcast((t.shape))) * sde.beta_0
+            pred_t = t - jnp.asarray(diff_step).broadcast((t.shape))
+            pred_t = jnp.where(pred_t < 0, 0, pred_t)
+            log_alphas = -0.25 * pred_t ** 2 * (sde.beta_1 - sde.beta_0) \
+                         - 0.5 * pred_t * sde.beta_0
             log_sigmas = 0.5 * jnp.log(1. - jnp.exp(2. * log_alphas))
             lambdas = log_alphas - log_sigmas
             next_log_alphas = -0.25 * (t) ** 2 * (sde.beta_1 - sde.beta_0) \
                               - 0.5 * (t) * sde.beta_0
             next_log_sigmas = 0.5 * jnp.log(1. - jnp.exp(2. * next_log_alphas) + 1e-5)
             next_lambdas = next_log_alphas - next_log_sigmas
-            diff_lambdas = (lambdas - next_lambdas)
-            final_weight = batch_mul(diff_lambdas, jnp.exp(-next_lambdas))
+            final_weight = (jnp.exp(-next_lambdas) - jnp.exp(-lambdas))
             sum_weight = jax.lax.fori_loop(1, kwargs["diff_step"] if ("diff_step" in kwargs.keys()) else sde.N,
                                            weight_fn, jnp.asarray(0.))
             final_weight = final_weight * (
                 kwargs["diff_step"] - 1 if ("diff_step" in kwargs.keys()) else sde.N - 1) / sum_weight
-            final_weight = jnp.where(jnp.logical_or(jnp.isinf(final_weight),jnp.isnan(final_weight)),1,final_weight)
+            final_weight = jnp.where(jnp.logical_or(jnp.isinf(final_weight), jnp.isnan(final_weight)), 1, final_weight)
         else:
             final_weight = jnp.ones_like(t)
 
@@ -305,10 +306,9 @@ def get_kd_smld_loss_fn(vesde, model, teacher_model, error_kd, train, reduce_mea
 
         if error_kd:
             lambdas = smld_lambda_array
-            next_lambdas = jnp.concatenate((lambdas, jnp.asarray([1.])))
-            now_lambdas = jnp.concatenate((jnp.asarray([0.]), lambdas))
-            diff_lambdas = (now_lambdas - next_lambdas)
-            last_lambdas = diff_lambdas * jnp.exp(-next_lambdas)
+            next_lambdas = jnp.concatenate((lambdas, lambdas[-1][None, ...]))
+            now_lambdas = jnp.concatenate((lambdas[0][None, ...], lambdas))
+            last_lambdas = jnp.exp(-next_lambdas) - jnp.exp(-now_lambdas)
             final_weight = last_lambdas.shape[0] * last_lambdas[labels] / jnp.sum(last_lambdas)
 
         else:
@@ -381,10 +381,9 @@ def get_kd_ddpm_loss_fn(vpsde, model, train, teacher_model, error_kd, reduce_mea
 
         if error_kd:
             lambdas = vpsde.discrete_lambda
-            next_lambdas = jnp.concatenate((lambdas, jnp.asarray([1.])))
-            now_lambdas = jnp.concatenate((jnp.asarray([0.]), lambdas))
-            diff_lambdas = (now_lambdas - next_lambdas)
-            last_lambdas = diff_lambdas * jnp.exp(-next_lambdas)
+            next_lambdas = jnp.concatenate((lambdas, lambdas[-1][None, ...]))
+            now_lambdas = jnp.concatenate((lambdas[0][None, ...], lambdas))
+            last_lambdas = jnp.exp(-next_lambdas) - jnp.exp(-now_lambdas)
             final_weight = last_lambdas.shape[0] * last_lambdas[labels] / jnp.sum(last_lambdas)
         else:
             final_weight = jnp.ones_like(labels)
