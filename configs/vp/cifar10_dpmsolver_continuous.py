@@ -33,7 +33,7 @@ def get_config():
   sampling.predictor = 'euler_maruyama'
   sampling.corrector = 'none'
   sampling.order = 2
-  sampling.steps = 30
+  sampling.steps = 15
 
   # inception_score: 9.572424e+00, FID: 5.434513e+00, KID: 1.251559e-03
   # data
@@ -45,7 +45,7 @@ def get_config():
   eval.end_ckpt = 26
   eval.batch_size = 512
   eval.enable_sampling = True
-  eval.num_samples = 10000
+  eval.num_samples = 50000
   eval.enable_loss = False
   eval.enable_bpd = False
   eval.bpd_dataset = 'test'
