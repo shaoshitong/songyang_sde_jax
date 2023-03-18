@@ -571,11 +571,21 @@ def get_obe_dpmsolver_sampler(sde, model, shape, inverse_scaler,
         def shift_fn(state, x):
             model_fn = get_new_model_fn(state)
             warpper_dpm_solver = DPM_Solver(model_fn, warpper_vpsde)
-            x = warpper_dpm_solver.sample(x, method="multistep", solver_type="dpm_solver", **kwargs)
-            return x
+            if kwargs.get("return_intermediate", False):
+                x, inter = warpper_dpm_solver.sample(x, method="multistep", solver_type="dpm_solver", **kwargs)
+                return x, inter
+            else:
+                x = warpper_dpm_solver.sample(x, method="multistep", solver_type="dpm_solver", **kwargs)
+                return x
 
-        x = shift_fn(pstate, x)
-        x = inverse_scaler(x)
-        return x, kwargs["steps"]
+        if kwargs.get("return_intermediate", False):
+            x,inter = shift_fn(pstate, x)
+            x = inverse_scaler(x)
+            inter = inverse_scaler(inter)
+            return x, inter, kwargs["steps"]
+        else:
+            x = shift_fn(pstate, x)
+            x = inverse_scaler(x)
+            return x, kwargs["steps"]
 
     return dpm_solver

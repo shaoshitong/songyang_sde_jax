@@ -134,4 +134,4 @@ def flatten_dict(config):
   return new_dict
 
 if __name__ =="__main__":
-  load_loss("/home/Bigdata/mtt_distillation_ckpt/song_sde/cifar10_ddpmdp_contiguous/eval/ckpt_26_loss.npz")
+  turn_npz_to_image("/home/Bigdata/mtt_distillation_ckpt/song_sde/cifar10_dpmsolver_contiguous/eval/ckpt_26_host_0/samples_0.npz")

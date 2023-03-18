@@ -101,7 +101,7 @@ class NoiseScheduleVP:
         self.schedule = schedule
         if schedule == 'discrete':
             if betas is not None:
-                log_alphas = 0.5 * jnp.log(1 - betas).cumsum(axis=0) # TODO: ERROR
+                log_alphas = 0.5 * jnp.log(1 - betas).cumsum(axis=0)  # TODO: ERROR
             else:
                 assert alphas_cumprod is not None
                 log_alphas = 0.5 * jnp.log(alphas_cumprod)
@@ -991,7 +991,7 @@ class DPM_Solver:
 
     def sample(self, x, steps=20, t_start=None, t_end=None, order=3, skip_type='time_uniform',
                method='singlestep', denoise=False, solver_type='dpm_solver', atol=0.0078,
-               rtol=0.05,
+               rtol=0.05, return_intermediate=False,
                ):
         """
         Compute the sample at time `t_end` by DPM-Solver, given the initial `x` at time `t_start`.
@@ -1096,29 +1096,64 @@ class DPM_Solver:
             vec_t = jnp.tile(timesteps[0], (x.shape[0]))
             model_prev_list = [self.model_fn(x, vec_t)]
             t_prev_list = [vec_t]
+            inter_outputs = []
             # Init the first `order` values by lower order multistep DPM-Solver.
             for init_order in range(1, order):
                 vec_t = jnp.tile(timesteps[init_order], (x.shape[0]))
+                if return_intermediate:
+                    inter_x = self.multistep_dpm_solver_update(x, model_prev_list, t_prev_list,
+                                                               jnp.tile(timesteps[-1], (x.shape[0])), init_order,
+                                                               solver_type=solver_type)
+                    inter_outputs.append(inter_x)
                 x = self.multistep_dpm_solver_update(x, model_prev_list, t_prev_list, vec_t, init_order,
                                                      solver_type=solver_type)
                 model_prev_list.append(self.model_fn(x, vec_t))
                 t_prev_list.append(vec_t)
+
             # Compute the remaining values by `order`-th order multistep DPM-Solver.
             ts_prev, models_prev = jnp.array(t_prev_list), jnp.array(model_prev_list)
+            if return_intermediate:
+                inter_outputs = jnp.array(inter_outputs)
+                nums = steps + 1 - order
+                inter_outputs = jnp.concatenate([inter_outputs,jnp.tile(jnp.ones_like(x)[None,...],(nums,1,1,1,1))],axis=0)
+                def multistep_loop_fn(step, val):
+                    x, ts_prev, models_prev, outputs = val
+                    vec_t = jnp.tile(timesteps[step], (x.shape[0]))
+                    inter_x = self.multistep_dpm_solver_update(x, model_prev_list, t_prev_list,
+                                                               jnp.tile(timesteps[-1], (x.shape[0])), init_order,
+                                                               solver_type=solver_type)
+                    outputs.at[step].set(inter_x)
+                    x = self.multistep_dpm_solver_update(x, models_prev, ts_prev, vec_t, order, solver_type=solver_type)
+                    ts_prev = jnp.roll(ts_prev, -1, axis=0)
+                    models_prev = jnp.roll(models_prev, -1, axis=0)
+                    ts_prev = ts_prev.at[-1].set(vec_t)
+                    # We do not need to evaluate the final model value.
+                    models_prev = models_prev.at[-1].set(
+                        jax.lax.cond(step < steps, lambda _: self.model_fn(x, vec_t), lambda _: models_prev[-1],
+                                     (None,)))
+                    return x, ts_prev, models_prev, outputs
+            else:
+                def multistep_loop_fn(step, val):
+                    x, ts_prev, models_prev = val
+                    vec_t = jnp.tile(timesteps[step], (x.shape[0]))
+                    x = self.multistep_dpm_solver_update(x, models_prev, ts_prev, vec_t, order, solver_type=solver_type)
+                    ts_prev = jnp.roll(ts_prev, -1, axis=0)
+                    models_prev = jnp.roll(models_prev, -1, axis=0)
+                    ts_prev = ts_prev.at[-1].set(vec_t)
+                    # We do not need to evaluate the final model value.
+                    models_prev = models_prev.at[-1].set(
+                        jax.lax.cond(step < steps, lambda _: self.model_fn(x, vec_t), lambda _: models_prev[-1],
+                                     (None,)))
+                    return x, ts_prev, models_prev
 
-            def multistep_loop_fn(step, val):
-                x, ts_prev, models_prev = val
-                vec_t = jnp.tile(timesteps[step], (x.shape[0]))
-                x = self.multistep_dpm_solver_update(x, models_prev, ts_prev, vec_t, order, solver_type=solver_type)
-                ts_prev = jnp.roll(ts_prev, -1, axis=0)
-                models_prev = jnp.roll(models_prev, -1, axis=0)
-                ts_prev = ts_prev.at[-1].set(vec_t)
-                # We do not need to evaluate the final model value.
-                models_prev = models_prev.at[-1].set(
-                    jax.lax.cond(step < steps, lambda _: self.model_fn(x, vec_t), lambda _: models_prev[-1], (None,)))
-                return x, ts_prev, models_prev
+            if return_intermediate:
+                x, _, _, inter_outputs = jax.lax.fori_loop(order, steps + 1, multistep_loop_fn,
+                                                           (x, ts_prev, models_prev, inter_outputs))
+                return x, inter_outputs
+            else:
+                x, _, _ = jax.lax.fori_loop(order, steps + 1, multistep_loop_fn, (x, ts_prev, models_prev))
+                return x
 
-            x, _, _ = jax.lax.fori_loop(order, steps + 1, multistep_loop_fn, (x, ts_prev, models_prev))
         elif method in ['singlestep', 'singlestep_fixed']:
             if method == 'singlestep':
                 timesteps_outer, orders = self.get_orders_and_timesteps_for_singlestep_solver(steps=steps, order=order,

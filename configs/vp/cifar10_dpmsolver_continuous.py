@@ -30,10 +30,11 @@ def get_config():
   # sampling
   sampling = config.sampling
   sampling.method = 'dpm_solver'
+  sampling.return_intermediate = True
   sampling.predictor = 'euler_maruyama'
   sampling.corrector = 'none'
   sampling.order = 2
-  sampling.steps = 15
+  sampling.steps = 30
 
   # inception_score: 9.572424e+00, FID: 5.434513e+00, KID: 1.251559e-03
   # data
@@ -45,11 +46,12 @@ def get_config():
   eval.end_ckpt = 26
   eval.batch_size = 512
   eval.enable_sampling = True
-  eval.num_samples = 50000
+  eval.num_samples = 1024
   eval.enable_loss = False
   eval.enable_bpd = False
+  eval.detail_enable_loss = False
   eval.bpd_dataset = 'test'
-
+  training.n_jitted_steps = 1
 
   # model
   model = config.model

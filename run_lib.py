@@ -79,10 +79,10 @@ def train(config, workdir):
         teacher_score_model, teacher_init_model_state, teacher_initial_params = mutils.init_model(step_rng, kd_config)
 
         checkpoint_dir = os.path.join(workdir, "teacher_checkpoints")
-        assert os.path.exists(checkpoint_dir),"This dir should be exists, and the checkpoint should store in it"
+        assert os.path.exists(checkpoint_dir), "This dir should be exists, and the checkpoint should store in it"
         new_state = checkpoints.restore_checkpoint(checkpoint_dir, target=None)
         teacher_initial_params = jax.tree_map(lambda x, y: x.reshape(y.shape), new_state["params_ema"],
-                                               teacher_initial_params.unfreeze())
+                                              teacher_initial_params.unfreeze())
 
     elif config.training.mode == "error_kd":
         rng, step_rng2 = jax.random.split(rng)
@@ -91,12 +91,10 @@ def train(config, workdir):
         teacher_score_model, teacher_init_model_state, teacher_initial_params = mutils.init_model(step_rng, kd_config)
 
         checkpoint_dir = os.path.join(workdir, "teacher_checkpoints")
-        assert os.path.exists(checkpoint_dir),"This dir should be exists, and the checkpoint should store in it"
+        assert os.path.exists(checkpoint_dir), "This dir should be exists, and the checkpoint should store in it"
         new_state = checkpoints.restore_checkpoint(checkpoint_dir, target=None)
         teacher_initial_params = jax.tree_map(lambda x, y: x.reshape(y.shape), new_state["params_ema"],
-                                               teacher_initial_params.unfreeze())
-
-
+                                              teacher_initial_params.unfreeze())
 
     optimizer = train_state.TrainState.create(
         tx=losses.get_optimizer(config),
@@ -156,9 +154,10 @@ def train(config, workdir):
                                            reduce_mean=reduce_mean, continuous=continuous,
                                            likelihood_weighting=likelihood_weighting)
     else:
-        train_step_fn = losses.get_kd_step_fn(sde, score_model, teacher_score_model, train=True, optimize_fn=optimize_fn,
-                                           reduce_mean=reduce_mean, continuous=continuous,
-                                           likelihood_weighting=likelihood_weighting,config=config)
+        train_step_fn = losses.get_kd_step_fn(sde, score_model, teacher_score_model, train=True,
+                                              optimize_fn=optimize_fn,
+                                              reduce_mean=reduce_mean, continuous=continuous,
+                                              likelihood_weighting=likelihood_weighting, config=config)
     # Pmap (and jit-compile) multiple training steps together for faster running
     p_train_step = jax.pmap(functools.partial(jax.lax.scan, train_step_fn), axis_name='batch', donate_argnums=1)
     eval_step_fn = losses.get_step_fn(sde, score_model, train=False, optimize_fn=optimize_fn,
@@ -200,7 +199,8 @@ def train(config, workdir):
         if config.training.mode == "origin":
             (_, pstate), ploss = p_train_step((next_rng, pstate), batch)
         else:
-            (_, pteacher_initial_params, pstate), ploss = p_train_step((next_rng,pteacher_initial_params, pstate), batch)
+            (_, pteacher_initial_params, pstate), ploss = p_train_step((next_rng, pteacher_initial_params, pstate),
+                                                                       batch)
 
         loss = flax.jax_utils.unreplicate(ploss).mean()
         # Log to console, file and tensorboard on host 0
@@ -400,7 +400,7 @@ def evaluate(config,
         # Wait if the target checkpoint doesn't exist yet
         waiting_message_printed = False
         ckpt_filename = os.path.join(checkpoint_dir, "checkpoint_{}".format(ckpt))
-        print(ckpt_filename)
+        print("load from:", ckpt_filename)
         while not tf.io.gfile.exists(ckpt_filename):
             if not waiting_message_printed and jax.host_id() == 0:
                 logging.warning("Waiting for the arrival of checkpoint_%d" % (ckpt,))
@@ -413,7 +413,8 @@ def evaluate(config,
 
         new_state = checkpoints.restore_checkpoint(checkpoint_dir, target=None, step=ckpt)
         new_state.pop("optimizer")
-        new_state["params_ema"] = jax.tree_map(lambda x,y:x.reshape(y.shape),new_state["params_ema"],state.params_ema.unfreeze())
+        new_state["params_ema"] = jax.tree_map(lambda x, y: x.reshape(y.shape), new_state["params_ema"],
+                                               state.params_ema.unfreeze())
         state = state.replace(**new_state)
         # Replicate the training state for executing on multiple devices
         pstate = flax.jax_utils.replicate(state)
@@ -438,6 +439,37 @@ def evaluate(config,
                 np.savez_compressed(io_buffer, all_losses=all_losses, mean_loss=all_losses.mean())
                 fout.write(io_buffer.getvalue())
 
+        if config.eval.get("detail_enable_loss", False):
+            detail_losses = []
+            eval_detail_step_fn = losses.get_eval_detail_step_fn(sde, score_model, train=False)
+            p_eval_detail_step_fn = jax.pmap(functools.partial(jax.lax.scan, eval_detail_step_fn), axis_name='batch',
+                                             donate_argnums=1)
+            train_iter = iter(train_ds)
+
+            for i, batch in enumerate(train_iter):
+                if i > 10:
+                    break
+                else:
+                    print(f"batch {i}")
+                t_losses = []
+                train_batch = jax.tree_map(lambda x: scaler(x._numpy()), batch)  # pylint: disable=protected-access
+                state = jax.device_put(state)
+                for i in range(1, sde.N, 1):
+                    rng, *next_rng = jax.random.split(rng, num=jax.local_device_count() + 1)
+                    next_rng = jnp.asarray(next_rng)
+                    t = jnp.ones((jax.local_device_count(), train_batch["image"].shape[2],), dtype=jnp.float32) * (
+                            i / sde.N)
+                    (_, _, _), p_t_loss = p_eval_detail_step_fn((next_rng, pstate, t), train_batch)
+                    t_loss = flax.jax_utils.unreplicate(p_t_loss).item()
+                    t_losses.append(t_loss)
+                detail_losses.append(t_losses)
+            detail_losses = jnp.asarray(detail_losses).astype(jnp.float32)
+            detail_losses = detail_losses.transpose((1, 0)).mean(axis=1)
+            print(detail_losses)
+            with tf.io.gfile.GFile(os.path.join(eval_dir, f"ckpt_{ckpt}_detail_loss.npz"), "wb") as fout:
+                io_buffer = io.BytesIO()
+                np.savez_compressed(io_buffer, detail_losses=detail_losses)
+                fout.write(io_buffer.getvalue())
         # Compute log-likelihoods (bits/dim) if enabled
         if config.eval.enable_bpd:
             bpds = []
@@ -506,23 +538,47 @@ def evaluate(config,
                 rng, *sample_rng = jax.random.split(rng, jax.local_device_count() + 1)
                 sample_rng = jnp.asarray(sample_rng)
                 if config.sampling.method == "dpm_solver":
-                    samples, n = sampling_fn(sample_rng, pstate, steps=config.sampling.steps, order=config.sampling.order)
+                    if config.sampling.return_intermediate:
+                        samples, inter_samples, n = sampling_fn(sample_rng, pstate, steps=config.sampling.steps,
+                                                                order=config.sampling.order,
+                                                                return_intermediate=config.sampling.return_intermediate)
+                    else:
+                        samples, n = sampling_fn(sample_rng, pstate, steps=config.sampling.steps,
+                                                 order=config.sampling.order,
+                                                 return_intermediate=config.sampling.return_intermediate)
                 else:
                     samples, n = sampling_fn(sample_rng, pstate)
                 samples = np.clip(samples * 255., 0, 255).astype(np.uint8)
                 samples = samples.reshape(
                     (-1, config.data.image_size, config.data.image_size, config.data.num_channels))
+
+                if config.sampling.return_intermediate:
+                    inter_samples = np.clip(inter_samples * 255., 0, 255).astype(np.uint8)
+                    inter_samples = inter_samples.reshape(
+                        (-1, samples.shape[0], config.data.image_size, config.data.image_size,
+                         config.data.num_channels)).transpose((1, 0, 2, 3, 4))
                 # Write samples to disk or Google Cloud Storage
                 with tf.io.gfile.GFile(
                         os.path.join(this_sample_dir, f"samples_{r}.npz"), "wb") as fout:
                     io_buffer = io.BytesIO()
                     np.savez_compressed(io_buffer, samples=samples)
                     fout.write(io_buffer.getvalue())
+                if config.sampling.return_intermediate:
+                    with tf.io.gfile.GFile(
+                            os.path.join(this_sample_dir, f"samples_inter_{r}.npz"), "wb") as fout:
+                        io_buffer = io.BytesIO()
+                        np.savez_compressed(io_buffer, samples=inter_samples)
+                        fout.write(io_buffer.getvalue())
 
                 # Force garbage collection before calling TensorFlow code for Inception network
                 gc.collect()
                 latents = evaluation.run_inception_distributed(samples, inception_model,
                                                                inceptionv3=inceptionv3)
+                if config.sampling.return_intermediate:
+                    inter_latents = []
+                    for i in range(inter_samples):
+                        inter_latents.append(evaluation.run_inception_distributed(inter_samples[i], inception_model,
+                                                                                  inceptionv3=inceptionv3))
                 # Force garbage collection again before returning to JAX code
                 gc.collect()
                 # Save latent represents of the Inception network to disk or Google Cloud Storage
@@ -532,6 +588,15 @@ def evaluate(config,
                     np.savez_compressed(
                         io_buffer, pool_3=latents["pool_3"], logits=latents["logits"])
                     fout.write(io_buffer.getvalue())
+
+                if config.sampling.return_intermediate:
+                    for ii, sub_latents in enumerate(inter_latents):
+                        with tf.io.gfile.GFile(
+                                os.path.join(this_sample_dir, f"statistics_inter_{ii}_{r}.npz"), "wb") as fout:
+                            io_buffer = io.BytesIO()
+                            np.savez_compressed(
+                                io_buffer, pool_3=sub_latents["pool_3"], logits=sub_latents["logits"])
+                            fout.write(io_buffer.getvalue())
 
                 # Update the intermediate evaluation state
                 eval_meta = eval_meta.replace(ckpt_id=ckpt, sampling_round_id=r, rng=rng)
@@ -553,7 +618,6 @@ def evaluate(config,
                 all_pools = []
                 for host in range(jax.host_count()):
                     this_sample_dir = os.path.join(eval_dir, f"ckpt_{ckpt}_host_{host}")
-
                     stats = tf.io.gfile.glob(os.path.join(this_sample_dir, "statistics_*.npz"))
                     wait_message = False
                     while len(stats) < num_sampling_rounds:
@@ -563,7 +627,6 @@ def evaluate(config,
                         stats = tf.io.gfile.glob(
                             os.path.join(this_sample_dir, "statistics_*.npz"))
                         time.sleep(30)
-
                     for stat_file in stats:
                         with tf.io.gfile.GFile(stat_file, "rb") as fin:
                             stat = np.load(fin)
@@ -571,10 +634,43 @@ def evaluate(config,
                                 all_logits.append(stat["logits"])
                             all_pools.append(stat["pool_3"])
 
+                    if config.sampling.return_intermediate:
+                        inter_total_all_logits = []
+                        inter_total_all_pools = []
+                        for ii in range(config.sampling.steps):
+                            inter_all_logits = []
+                            inter_all_pools = []
+                            inter_stats = tf.io.gfile.glob(
+                                os.path.join(this_sample_dir, f"statistics_inter_{ii}_*.npz"))
+                            wait_message = False
+                            while len(inter_stats) < num_sampling_rounds:
+                                if not wait_message:
+                                    logging.warning("Waiting for statistics on host %d" % (host,))
+                                    wait_message = True
+                                inter_stats = tf.io.gfile.glob(
+                                    os.path.join(this_sample_dir, f"statistics_inter_{ii}_*.npz"))
+                                time.sleep(30)
+                            for stat_file in inter_stats:
+                                with tf.io.gfile.GFile(stat_file, "rb") as fin:
+                                    stat = np.load(fin)
+                                    if not inceptionv3:
+                                        inter_all_logits.append(stat["logits"])
+                                    inter_all_pools.append(stat["pool_3"])
+                            inter_total_all_logits.append(inter_all_logits)
+                            inter_total_all_pools.append(inter_all_pools)
                 if not inceptionv3:
                     all_logits = np.concatenate(
                         all_logits, axis=0)[:config.eval.num_samples]
+                    if config.sampling.return_intermediate:
+                        for ii in range(config.sampling.steps):
+                            inter_total_all_logits[ii] = np.concatenate(
+                                inter_total_all_logits[ii], axis=0)[:config.eval.num_samples]
+
                 all_pools = np.concatenate(all_pools, axis=0)[:config.eval.num_samples]
+                if config.sampling.return_intermediate:
+                    for ii in range(config.sampling.steps):
+                        inter_total_all_pools[ii] = np.concatenate(
+                            inter_total_all_pools[ii], axis=0)[:config.eval.num_samples]
 
                 # Load pre-computed dataset statistics.
                 data_stats = evaluation.load_dataset_stats(config)
@@ -598,12 +694,32 @@ def evaluate(config,
                 logging.info(
                     "ckpt-%d --- inception_score: %.6e, FID: %.6e, KID: %.6e" % (
                         ckpt, inception_score, fid, kid))
-
                 with tf.io.gfile.GFile(os.path.join(eval_dir, f"report_{ckpt}.npz"),
                                        "wb") as f:
                     io_buffer = io.BytesIO()
                     np.savez_compressed(io_buffer, IS=inception_score, fid=fid, kid=kid)
                     f.write(io_buffer.getvalue())
+
+                if config.sampling.return_intermediate:
+                    for ii in range(config.sampling.steps):
+                        if not inceptionv3:
+                            inception_score = tfgan.eval.classifier_score_from_logits(inter_total_all_logits[ii])
+                        else:
+                            inception_score = -1
+
+                        fid = tfgan.eval.frechet_classifier_distance_from_activations(
+                            data_pools, inter_total_all_pools[ii])
+                        # Hack to get tfgan KID work for eager execution.
+                        tf_data_pools = tf.convert_to_tensor(data_pools)
+                        tf_all_pools = tf.convert_to_tensor(inter_total_all_pools[ii])
+                        kid = tfgan.eval.kernel_classifier_distance_from_activations(
+                            tf_data_pools, tf_all_pools).numpy()
+                        del tf_data_pools, tf_all_pools
+
+                        logging.info(
+                            "ckpt-%d --- steps: %d, inception_score: %.6e, FID: %.6e, KID: %.6e" % (
+                                ckpt, ii + 1, inception_score, fid, kid))
+
             else:
                 # For host_id() != 0.
                 # Use file existence to emulate synchronization across hosts

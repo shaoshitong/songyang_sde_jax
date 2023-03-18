@@ -177,7 +177,6 @@ def get_kd_sde_loss_fn(sde, model, teacher_model, error_kd, train, reduce_mean=T
                                                return_state=True, is_teacher=False)
 
         data = batch['image']
-
         rng, step_rng = random.split(rng)
         t = random.uniform(step_rng, (data.shape[0],), minval=eps, maxval=sde.T)
         rng, step_rng = random.split(rng)
@@ -468,6 +467,77 @@ def get_step_fn(sde, model, train, optimize_fn=None, reduce_mean=False, continuo
 
         loss = jax.lax.pmean(loss, axis_name='batch')
         new_carry_state = (rng, new_state)
+        return new_carry_state, loss
+
+    return step_fn
+
+
+def get_eval_detail_step_fn(sde, model, train, reduce_mean=True, continuous=True):
+    """Create a one-step training/evaluation function.
+
+    Args:
+      sde: An `sde_lib.SDE` object that represents the forward SDE.
+      model: A `flax.linen.Module` object that represents the architecture of the score-based model.
+      train: `True` for training and `False` for evaluation.
+      optimize_fn: An optimization function.
+      reduce_mean: If `True`, average the loss across data dimensions. Otherwise sum the loss across data dimensions.
+      continuous: `True` indicates that the model is defined to take continuous time steps.
+      likelihood_weighting: If `True`, weight the mixture of score matching losses according to
+        https://arxiv.org/abs/2101.09258; otherwise use the weighting recommended by our paper.
+
+    Returns:
+      A one-step function for training or evaluation.
+    """
+
+    def loss_fn(rng, params, states, batch, t):
+        """Compute the loss function.
+
+        Args:
+          rng: A JAX random state.
+          params: A dictionary that contains trainable parameters of the score-based model.
+          states: A dictionary that contains mutable states of the score-based model.
+          batch: A mini-batch of training data.
+
+        Returns:
+          loss: A scalar that represents the average loss value across the mini-batch.
+          new_model_state: A dictionary that contains the mutated states of the score-based model.
+        """
+        eps = 1e-5
+        reduce_op = jnp.mean if reduce_mean else lambda *args, **kwargs: 0.5 * jnp.sum(*args, **kwargs)
+        score_fn = mutils.get_score_fn(sde, model, params, states, train=train, continuous=continuous,
+                                       return_state=True)
+        data = batch['image']
+        mean, std = sde.marginal_prob(data, t)
+        rng, step_rng = random.split(rng)
+        z = random.normal(step_rng, data.shape)
+        perturbed_data = mean + batch_mul(std, z)
+        rng, step_rng = random.split(rng)
+        score, new_model_state = score_fn(perturbed_data, t, rng=step_rng)
+        losses = jnp.square(batch_mul(score, std) + z)
+        losses = reduce_op(losses.reshape((losses.shape[0], -1)), axis=-1)
+        loss = jnp.mean(losses)
+        return loss, new_model_state
+
+    def step_fn(carry_state, batch):
+        """Running one step of training or evaluation.
+
+        This function will undergo `jax.lax.scan` so that multiple steps can be pmapped and jit-compiled together
+        for faster execution.
+
+        Args:
+          carry_state: A tuple (JAX random state, `flax.struct.dataclass` containing the training state).
+          batch: A mini-batch of training/evaluation data.
+
+        Returns:
+          new_carry_state: The updated tuple of `carry_state`.
+          loss: The average loss value of this state.
+        """
+        (rng, state, t) = carry_state
+        rng, step_rng = jax.random.split(rng)
+        loss, _ = loss_fn(step_rng, state.params_ema, state.model_state, batch, t)
+        new_state = state
+        loss = jax.lax.pmean(loss, axis_name='batch')
+        new_carry_state = (rng, new_state, t)
         return new_carry_state, loss
 
     return step_fn
