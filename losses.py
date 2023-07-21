@@ -37,10 +37,9 @@ def schedule_fn(lr, step, config):
 def get_optimizer(config):
     """Returns a flax optimizer object based on `config`."""
     if config.optim.optimizer == 'Adam':
-        optimizer = optax.chain(optax.adam(learning_rate=config.optim.lr, b1=config.optim.beta1, eps=config.optim.eps),
-                                optax.scale_by_schedule(
-                                    lambda step: schedule_fn(lr=config.optim.lr, config=config, step=step))
-                                )
+        optimizer = optax.chain(
+            optax.scale_by_schedule(lambda step: schedule_fn(lr=config.optim.lr, config=config, step=step)),
+            optax.adam(learning_rate=config.optim.lr, b1=config.optim.beta1, eps=config.optim.eps))
     else:
         raise NotImplementedError(
             f'Optimizer {config.optim.optimizer} not supported yet!')

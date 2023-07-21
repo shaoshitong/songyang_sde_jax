@@ -40,9 +40,68 @@ In general, the PyTorch version consumes less memory but also runs slower than J
 
 ### Dependencies
 
-Run the following to install a subset of necessary python packages for our code
+First, you should install cuda==11.3 and cudnn==8.901. The version of cuda and cudnn on your ubuntu can be viewed with the following command:
+```
+nvcc --version
+cat /usr/local/cuda/include/cudnn_version.h | grep CUDNN_MAJOR -A 2
+```
+On my ubuntu I can obtain:
+```
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2021 NVIDIA Corporation
+Built on Sun_Mar_21_19:15:46_PDT_2021
+Cuda compilation tools, release 11.3, V11.3.58
+Build cuda_11.3.r11.3/compiler.29745058_0
+```
+
+```
+#define CUDNN_MAJOR 8
+#define CUDNN_MINOR 9
+#define CUDNN_PATCHLEVEL 1
+--
+#define CUDNN_VERSION (CUDNN_MAJOR * 1000 + CUDNN_MINOR * 100 + CUDNN_PATCHLEVEL) # i.e., 8901
+
+/* cannot use constexpr here since this is a C-only file */
+```
+You can install cuda==11.3 and cudnn==8.901 follow [install-cuda](https://developer.nvidia.com/cuda-downloads) and [install-cudnn](https://developer.nvidia.com/CUDNN). For example, commands on a ubuntu with architectue==x86, ubuntu==20.04, installer type==local are:
+```
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-ubuntu2004.pin
+sudo mv cuda-ubuntu2004.pin /etc/apt/preferences.d/cuda-repository-pin-600
+wget https://developer.download.nvidia.com/compute/cuda/12.2.0/local_installers/cuda-repo-ubuntu2004-12-2-local_12.2.0-535.54.03-1_amd64.deb
+sudo dpkg -i cuda-repo-ubuntu2004-12-2-local_12.2.0-535.54.03-1_amd64.deb
+sudo cp /var/cuda-repo-ubuntu2004-12-2-local/cuda-*-keyring.gpg /usr/share/keyrings/
+sudo apt-get update
+sudo apt-get -y install cuda # Install CUDA
+
+# Installing CUDNN requires you to agree to a few requirements before you can download the installation package in deb format
+```
+
+Second, run the following to install a subset of necessary python packages for songyang's code
+
 ```sh
 bash install.sh
+```
+
+After that, the version of jax, flax and tensorflow are:
+```
+jax                          0.4.6
+jaxlib                       0.4.6+cuda11.cudnn86
+optax                        0.1.4
+flax                         0.6.6
+tensorboard                  2.11.2
+tensorboard-data-server      0.6.1
+tensorboard-plugin-wit       1.8.1
+tensorflow                   2.5.0
+tensorflow-addons            0.19.0
+tensorflow-datasets          4.8.3
+tensorflow-estimator         2.5.0
+tensorflow-gan               2.0.0
+tensorflow-hub               0.12.0
+tensorflow-io                0.31.0
+tensorflow-io-gcs-filesystem 0.31.0
+tensorflow-metadata          1.12.0
+tensorflow-probability       0.13.0
+tensorstore                  0.1.33
 ```
 
 ### Stats files for quantitative evaluation
